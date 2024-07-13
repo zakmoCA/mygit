@@ -1,3 +1,3 @@
-# the GIT at home
+# the GIT at home: mygit
 
-Implementing GIT version-control software from scratch in Ruby for learnings.
+Barebones GIT from scratch in Ruby for learnings. Initialise local repos + add and commit changes.

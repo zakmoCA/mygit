@@ -1,0 +1,16 @@
+#!/usr/bin/env ruby
+
+mygit_command, *args = ARGV
+
+if mygit_command.nil?
+  $stderr.puts "To use mygit enter a command like so: mygit <command> [<args>]"
+  exit 1
+end
+
+path_to_mygit_command = File.expand_path("../mygit_#{mygit_command}", __FILE__)
+if !File.exist? path_to_mygit_command
+  $stderr.puts "Command not found"
+  exit 1
+end
+
+exec path_to_mygit_command, *args
