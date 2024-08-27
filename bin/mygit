@@ -3,7 +3,7 @@
 mygit_command, *args = ARGV
 
 if mygit_command.nil?
-  $stderr.puts "To use mygit enter a command like so: mygit <command> [<args>]"
+  $stderr.puts "To use MyGit enter a command like so: mygit <command> [<args>]"
   exit 1
 end
 

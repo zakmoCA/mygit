@@ -1,1 +1,36 @@
 #!/usr/bin/env ruby
+
+require "digest"
+require "zlib"
+require "fileutils"
+
+MYGIT_DIR = ".mygit".freeze
+OBJECTS_DIR = "#{MYGIT_DIR}/objects".freeze
+INDEX_PATH = "#{MYGIT_DIR}/index"
+
+if !Dir.exist? MYGIT_DIR
+  $stderr.puts "This is not an existing MyGit project"
+  exit 1
+end
+
+path = ARGV.first
+
+if path.nil?
+  $stderr.puts "No path specified"
+  exit 1
+end
+
+file_contents = File.read(path)
+sha = Digest::SHA1.hexdigest file_contents
+blob = Zlib::Deflate.deflate file_contents
+object_dir = "#{OBJECTS_DIR}/#{sha[0..1]}"
+FileUtils.mkdir_p object_dir
+blob_path = "#{object_dir}/#{sha[2..-1]}"
+
+File.open(blob_path, "w") do |file|
+  file.print blob
+end
+
+File.open(INDEX_PATH, "a") do |file|
+  file.puts "#{sha} #{path}"
+end

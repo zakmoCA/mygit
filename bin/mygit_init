@@ -1,2 +1,54 @@
 #!/usr/bin/env ruby
 
+MYGIT_DIR=".mygit".freeze
+OBJECTS_DIR = "#{MYGIT_DIR}/objects".freeze
+REFS_DIR = "#{MYGIT_DIR}/refs".freeze
+
+def mygit_init
+  if Dir.exist? MYGIT_DIR
+    $stderr.puts ".mygit repository already exists in this directory"
+    exit 1
+  end
+
+  Dir.mkdir MYGIT_DIR
+  create_objects_dir
+  create_refs_dir
+  init_head
+  init_mygit_repo
+end
+
+# Todo: ?config-file, .mygitignore, provide option for README creation with .mygit initialisation, help option
+def create_objects_dir
+  Dir.mkdir OBJECTS_DIR
+  Dir.mkdir "#{OBJECTS_DIR}/info"
+  Dir.mkdir "#{OBJECTS_DIR}/pack"
+end
+
+def create_refs_dir
+  Dir.mkdir REFS_DIR
+  Dir.mkdir "#{REFS_DIR}/heads"
+  Dir.mkdir "#{REFS_DIR}/tags"
+end
+
+def init_head
+  File.open("#{MYGIT_DIR}/HEAD", "w") do |file|
+    file.puts "ref: refs/heads/main"
+  end
+end
+
+def init_mygit_repo
+  repo_path = File.expand_path(MYGIT_DIR)
+  $stdout.puts ".mygit repository initialised in #{repo_path}"
+end
+
+begin
+  mygit_init
+rescue StandardError => e
+  $stderr.puts "Error: #{e.message}"
+
+  if Dir.exist? MYGIT_DIR
+    FileUtils.rm_rf(MYGIT_DIR)
+    $stderr.puts ".mygit initialisation aborted and .mygit directory removed due to initialisation error"
+  end
+  exit 1
+end

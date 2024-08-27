@@ -1,1 +1,100 @@
 #!/usr/bin/env ruby
+
+$LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)
+require "digest"
+require "time"
+require "mygit/mygit_objects"
+
+MYGIT_DIR = "#{Dir.pwd}/.mygit".freeze
+INDEX_PATH = "#{MYGIT_DIR}/index"
+COMMIT_MESSAGE_TEMPLATE = <<-TXT
+# Title
+#
+# Body
+TXT
+
+def mygit_commit
+  unless index_files.any?
+    $stderr.puts "Nothing to commit"
+    exit 1
+  end
+
+  tree = index_tree
+  root_sha = build_tree("root", tree)
+  commit_sha = build_commit(tree: root_sha)
+  update_ref(commit_sha: commit_sha)
+  clear_index
+end
+
+def index_files
+  File.open(INDEX_PATH).each_line
+end
+
+def index_tree
+  index_lines = index_files.to_a
+  return unless index_lines.any?
+
+  index_lines.each_with_object({}) do |line, object|
+    line_parts = line.split
+    next unless line_parts.size > 3
+
+    sha, _, path = line_parts
+    segments = path.split("/")
+    segments.reduce(object) do |acc, segment|
+      acc[segment] ||= {} unless segment == segments.last
+
+      acc[segments.last] = sha
+    end
+  end
+end
+
+def build_tree(name, tree)
+  sha = Digest::SHA1.hexdigest(Time.now.to_s + name)
+  object = MyGit::Object.new(sha)
+
+  object.write_contents do |file|
+    tree&.each do |key, value|
+      if value.is_a?(Hash)
+        dir_sha = build_tree(key, value)
+        file.puts "tree #{dir_sha} #{key}"
+      else
+        file.puts "blob #{value} #{key}"
+      end
+    end
+  end
+  sha
+end
+
+def build_commit(tree:)
+  commit_message_path = "#{MYGIT_DIR}/COMMIT_EDIT_MESSAGE"
+
+  `echo "#{COMMIT_MESSAGE_TEMPLATE}" > #{commit_message_path}`
+  `$VISUAL #{commit_message_path} > /dev/tty`
+
+  commit_message = File.read commit_message_path
+  author = "user"
+  sha = Digest::SHA1.hexdigest(Time.now.to_s)
+  object = MyGit::Object.new(sha)
+
+  object.write_contents do |file|
+    file.puts "tree #{tree}"
+    file.puts "author #{author}"
+    file.puts
+    file.puts commit_message
+  end
+  sha
+end
+
+def update_ref(commit_sha:)
+  current_branch = File.read("#{MYGIT_DIR}/HEAD").strip.split.last
+
+  File.open("#{MYGIT_DIR}/#{current_branch}", "w") do |file|
+    file.print commit_sha
+  end
+end
+
+def clear_index
+  File.truncate INDEX_PATH, 0
+end
+
+mygit_commit
