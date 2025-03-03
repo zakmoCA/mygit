@@ -21,7 +21,8 @@ if path.nil?
 end
 
 file_contents = File.read(path)
-sha = Digest::SHA1.hexdigest file_contents
+content = "blob #{file_contents.bytesize}\0#{file_contents}"
+sha = Digest::SHA1.hexdigest(content)
 blob = Zlib::Deflate.deflate file_contents
 object_dir = "#{OBJECTS_DIR}/#{sha[0..1]}"
 FileUtils.mkdir_p object_dir

@@ -16,6 +16,11 @@ module MyGit
       File.open(object_path, "w", &block)
     end
 
+    def read_contents
+      object_path = "#{OBJECTS_DIR}/#{@sha[0..1]}/#{@sha[2..-1]}"
+      Zlib::Inflate.inflate(File.read(object_path))
+    end
+
     private
 
     attr_reader :sha
