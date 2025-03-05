@@ -20,18 +20,36 @@ if path.nil?
   exit 1
 end
 
-file_contents = File.read(path)
-content = "blob #{file_contents.bytesize}\0#{file_contents}"
-sha = Digest::SHA1.hexdigest(content)
-blob = Zlib::Deflate.deflate file_contents
-object_dir = "#{OBJECTS_DIR}/#{sha[0..1]}"
-FileUtils.mkdir_p object_dir
-blob_path = "#{object_dir}/#{sha[2..-1]}"
+begin
+  file_contents = File.read(path)
 
-File.open(blob_path, "w") do |file|
-  file.print blob
-end
+  # init blob
+  content = "blob #{file_contents.bytesize}\0#{file_contents}"
+  sha = Digest::SHA1.hexdigest(content)
 
-File.open(INDEX_PATH, "a") do |file|
-  file.puts "#{sha} #{path}"
+  # compress content + header
+  blob = Zlib::Deflate.deflate(content)
+
+  # store blob
+  object_dir = "#{OBJECTS_DIR}/#{sha[0..1]}"
+  FileUtils.mkdir_p object_dir
+  blob_path = "#{object_dir}/#{sha[2..-1]}"
+
+  File.open(blob_path, "wb") do |file|
+    file.write blob
+  end
+
+  # index update
+  File.open(INDEX_PATH, "a") do |file|
+    file.puts "#{sha} #{path}"
+  end
+
+  puts "Added #{path} (#{sha[0..6]})"
+
+rescue Errno::ENOENT
+  $stderr.puts "File not found: #{path}"
+  exit 1
+rescue Errno::EACCES
+  $stderr.puts "Permission denied: #{path}"
+  exit 1
 end
