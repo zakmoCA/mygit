@@ -6,6 +6,7 @@ require "time"
 require "mygit/mygit_objects"
 
 MYGIT_DIR = "#{Dir.pwd}/.mygit".freeze
+OBJECTS_DIR = "#{MYGIT_DIR}/objects".freeze
 INDEX_PATH = "#{MYGIT_DIR}/index"
 COMMIT_MESSAGE_TEMPLATE = <<-TXT
 # Title
@@ -19,14 +20,27 @@ def mygit_commit
     exit 1
   end
 
-  tree = index_tree
-  root_sha = build_tree("root", tree)
-  commit_sha = build_commit(tree: root_sha)
-  update_ref(commit_sha: commit_sha)
-  clear_index
+  begin
+    tree = index_tree
+    root_sha = build_tree("root", tree)
+    commit_sha = build_commit(tree: root_sha)
+
+    if commit_sha
+      update_ref(commit_sha: commit_sha)
+      clear_index
+      puts "Created commit #{commit_sha[0..6]}"
+    else
+      $stderr.puts "Failed to create commit"
+      exit 1
+    end
+  rescue StandardError => e
+    $stderr.puts "Error: #{e.message}"
+    exit 1
+  end
 end
 
 def index_files
+  return [] unless File.exist?(INDEX_PATH)
   File.open(INDEX_PATH).each_line
 end
 
@@ -36,65 +50,121 @@ def index_tree
 
   index_lines.each_with_object({}) do |line, object|
     line_parts = line.split
-    next unless line_parts.size > 3
+    next unless line_parts.size >= 2
 
-    sha, _, path = line_parts
+    sha = line_parts[0]
+    path = line_parts[1..-1].join(" ") # spaces handling
+
     segments = path.split("/")
-    segments.reduce(object) do |acc, segment|
-      acc[segment] ||= {} unless segment == segments.last
+    current = object
 
-      acc[segments.last] = sha
+    # nav/create tree struct
+    segments[0...-1].each do |segment|
+      current[segment] ||= {}
+      current = current[segment]
     end
+
+    # file to tree
+    current[segments.last] = sha
   end
 end
 
 def build_tree(name, tree)
-  sha = Digest::SHA1.hexdigest(Time.now.to_s + name)
-  object = MyGit::Object.new(sha)
+  return nil unless tree
 
-  object.write_contents do |file|
-    tree&.each do |key, value|
-      if value.is_a?(Hash)
-        dir_sha = build_tree(key, value)
-        file.puts "tree #{dir_sha} #{key}"
-      else
-        file.puts "blob #{value} #{key}"
-      end
+  tree_content = ""
+
+  tree.each do |key, value|
+    if value.is_a?(Hash)
+      # subtree
+      subtree_sha = build_tree(key, value)
+      tree_content << "tree #{subtree_sha} #{key}\n"
+    else
+      # blob
+      tree_content << "blob #{value} #{key}\n"
     end
   end
+
+  # content-based SHA
+  content = "tree #{tree_content.bytesize}\0#{tree_content}"
+  sha = Digest::SHA1.hexdigest(content)
+
+  # tree obj store
+  object_dir = "#{OBJECTS_DIR}/#{sha[0..1]}"
+  FileUtils.mkdir_p object_dir
+  object_path = "#{object_dir}/#{sha[2..-1]}"
+
+  blob = Zlib::Deflate.deflate(content)
+  File.open(object_path, "wb") do |file|
+    file.write blob
+  end
+
   sha
 end
 
 def build_commit(tree:)
-  commit_message_path = "#{MYGIT_DIR}/COMMIT_EDIT_MESSAGE"
+  return nil unless tree
 
+  commit_message_path = "#{MYGIT_DIR}/COMMIT_EDIT_MESSAGE"
   `echo "#{COMMIT_MESSAGE_TEMPLATE}" > #{commit_message_path}`
   `$VISUAL #{commit_message_path} > /dev/tty`
+  commit_message = File.read(commit_message_path).strip
 
-  commit_message = File.read commit_message_path
-  author = "user"
-  sha = Digest::SHA1.hexdigest(Time.now.to_s)
-  object = MyGit::Object.new(sha)
-
-  object.write_contents do |file|
-    file.puts "tree #{tree}"
-    file.puts "author #{author}"
-    file.puts
-    file.puts commit_message
+  if commit_message.empty? || commit_message == COMMIT_MESSAGE_TEMPLATE.strip
+    $stderr.puts "Aborting commit due to empty commit message"
+    return nil
   end
+
+  author = ENV["USER"] || "user"
+  timestamp = Time.now.to_i
+  timezone = Time.now.strftime("%z")
+
+  # parent commit
+  parent = nil
+  current_branch = File.read("#{MYGIT_DIR}/HEAD").strip.split.last
+  parent_path = "#{MYGIT_DIR}/#{current_branch}"
+  parent = File.read(parent_path).strip if File.exist?(parent_path)
+
+  # Build commit content
+  commit_content = ""
+  commit_content << "tree #{tree}\n"
+  commit_content << "parent #{parent}\n" if parent
+  commit_content << "author #{author} #{timestamp} #{timezone}\n"
+  commit_content << "committer #{author} #{timestamp} #{timezone}\n"
+  commit_content << "\n"
+  commit_content << commit_message
+
+  # create commit obj with proper format
+  content = "commit #{commit_content.bytesize}\0#{commit_content}"
+  sha = Digest::SHA1.hexdigest(content)
+
+  # store
+  object_dir = "#{OBJECTS_DIR}/#{sha[0..1]}"
+  FileUtils.mkdir_p object_dir
+  object_path = "#{object_dir}/#{sha[2..-1]}"
+
+  blob = Zlib::Deflate.deflate(content)
+  File.open(object_path, "wb") do |file|
+    file.write blob
+  end
+
   sha
 end
 
 def update_ref(commit_sha:)
   current_branch = File.read("#{MYGIT_DIR}/HEAD").strip.split.last
+  branch_path = "#{MYGIT_DIR}/#{current_branch}"
 
-  File.open("#{MYGIT_DIR}/#{current_branch}", "w") do |file|
+  branch_dir = File.dirname(branch_path)
+  FileUtils.mkdir_p(branch_dir) unless Dir.exist?(branch_dir)
+
+  File.open(branch_path, "w") do |file|
     file.print commit_sha
   end
 end
 
 def clear_index
-  File.truncate INDEX_PATH, 0
+  File.truncate(INDEX_PATH, 0) if File.exist?(INDEX_PATH)
 end
 
 mygit_commit
