@@ -1,31 +1,35 @@
 # MyGit (the GIT at home)
 
-MyGit is a barebones Git implementation built as a learning exercise. MyGit so far has three rudimentary Git functionalities: 
+MyGit is a barebones Git implementation built as a learning exercise. MyGit implements the core concepts of Git's content-addressable storage system with three rudimentary Git functionalities:
 
 - `mygit_init` - initialising a mygit repo
 - `mygit_add` - adding files
 - `mygit_commit` - commiting files
 
-## Overview
+## Implementation
 
-`bin/mygit` is our entry-point executable for parsing and executing mygit commands and args. 
+MyGit now properly implements several Git concepts:
 
-*
-- `.mygit/objects/info` and `.mygit/objects/pack` yet to be utilised.
+- **Content-addressable storage**: Files are stored based on SHA1 hash of their content
+- **Object types**: Supports blob (file), tree (directory), and commit objects
+- **Proper Git headers**: Object storage includes type and size headers
+- **Compressed storage**: All objects are zlib-compressed
+- **Parent commit tracking**: Commits reference their parents for history
+
 
 ### bin/mygit_init
 
 This command initialises a new MyGit repository by creating the `.mygit` directory and its initial structure:
 
 ```
-.mygit
+    .mygit
 ├── HEAD
 ├── objects
 │  ├── info
 │  └── pack
 └── refs
-    ├── heads
-    └── tags
+├── heads
+└── tags
 ```
 
 - `HEAD`: Points to the current branch
@@ -34,15 +38,18 @@ This command initialises a new MyGit repository by creating the `.mygit` directo
 
 ### bin/mygit_add <filepath>
 
-Stages a file for commit. For example, `bin/mygit_add bin/mygit` will create an object file and update the index:
+Stages a file for commit. For example, `bin/mygit_add README.md` will:
+1. Calculate the SHA1 hash of the file with proper headers
+2. Store the compressed content as a blob object
+3. Update the index with the file's path and hash
 
 ```
 .mygit
 ├── HEAD
 ├── index
 ├── objects
-│   ├── ae
-│   │   └── e8e36f65a8845162561692d123daf23d59a686
+│   ├── 5b
+│   │   └── 6c2e3f7d8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3
 │   ├── info
 │   └── pack
 └── refs
@@ -50,17 +57,22 @@ Stages a file for commit. For example, `bin/mygit_add bin/mygit` will create an 
 └── tags
 ```
 
-The `index` file will contain information about the staged files. A simplified view might look like:
+The `index` file will contain information about the staged files:
 
-`aee8e36f65a8845162561692d123daf23d59a686 bin/mygit`
-
+`5b6c2e3f7d8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3 README.md`
 
 ### bin/mygit_commit
 
-Creates a new commit object with the current state of the index, and after a few stagings and commits, the .mygit structure might look like follows:
+Creates a new commit object with the current state of the index by:
+1. Building tree objects for the directory structure
+2. Opening an editor for the commit message
+3. Creating a commit object with references to the tree and parent
+4. Updating the current branch to point to the new commit
+
+After a few stagings and commits, the .mygit structure might look like:
 
 ```
-.mygit
+    .mygit
 ├── COMMIT_EDIT_MESSAGE
 ├── HEAD
 ├── index
@@ -87,14 +99,24 @@ Creates a new commit object with the current state of the index, and after a few
 - Objects in `.mygit/objects/` Represent various Git objects (blobs, trees, commits)
 - `refs/heads/main`: Points to the latest commit on the main branch
 
-Note: The object hashes and directory names are examples and will differ based on actual content.
-
 **To note ⚠️:** Object directories in `.mygit/objects/` are named with the first two characters of the object hash
 
-Will also implement config, .gitignore, and README files creation option feature likely, although project scope met.
+## Usage
 
-### Todos
+```bash
+# init a repo
+bin/mygit init
 
-- [ ] commit reconciled to branch
-- [ ] config and .gitignore files
+# add files to staging
+bin/mygit add <filename>
+
+# commit staged
+bin/mygit commit
+```
+
+## Reamining Todos
+
 - [ ] README init creation option template
+- [ ] branch creation and management
+- [ ] checkout/merge functionality
+- [ ] log command for viewing history
